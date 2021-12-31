@@ -1,3 +1,4 @@
+const { parse } = require ('csv/sync');
 const basePath = process.cwd();
 const { NETWORK } = require(`${basePath}/constants/network.js`);
 const fs = require("fs");
@@ -30,8 +31,34 @@ var attributesList = [];
 var dnaList = new Set();
 const DNA_DELIMITER = "-";
 const HashlipsGiffer = require(`${basePath}/modules/HashlipsGiffer.js`);
+const layersCsvPath = `${basePath}/layers/layers.csv`;
 
 let hashlipsGiffer = null;
+
+const layerTraitCsvNormlizer = (layer, trait) => `${layer.toLowerCase()}#${trait.toLowerCase()}`;
+
+const readLayersCsv = (path) => {
+  const layersCsvExist = fs.existsSync(path);
+
+  if (!layersCsvExist) {
+    debugLogs && console.log("Layers CSV not provided")
+    return {};
+  }
+
+  const layersCsvData = fs.readFileSync(path);
+  const layersCsvParsed = parse(layersCsvData, {
+    columns: true
+  });
+
+  debugLogs && console.log(`Layers CSV parsed with ${Object.keys(layersCsvParsed).length} entries`);
+
+  // Normalize each row to include layer and 
+  return layersCsvParsed.reduce((accumulator, cur) => {
+    accumulator[layerTraitCsvNormlizer(cur.layer, cur.trait)] = cur;
+
+    return accumulator;
+  }, {});
+}
 
 const buildSetup = () => {
   if (fs.existsSync(buildDir)) {
@@ -56,6 +83,13 @@ const getRarityWeight = (_str) => {
   return nameWithoutWeight;
 };
 
+const getRarityWeightFromCsv = (layersCsvData, layerName, elementName) => {
+  const normalizedLayerTrait = layerTraitCsvNormlizer(layerName, elementName);
+  const elementOnCsv = layersCsvData[normalizedLayerTrait] || {};
+
+  return elementOnCsv['rarity'] ? Number(elementOnCsv['rarity']) : undefined;
+};
+
 const cleanDna = (_str) => {
   const withoutOptions = removeQueryStrings(_str);
   var dna = Number(withoutOptions.split(":").shift());
@@ -68,25 +102,27 @@ const cleanName = (_str) => {
   return nameWithoutWeight;
 };
 
-const getElements = (path) => {
+const getElements = (path, layerName, layersCsvData) => {
   return fs
     .readdirSync(path)
     .filter((item) => !/(^|\/)\.[^\/\.]/g.test(item))
     .map((i, index) => {
+      const cleanElementName = cleanName(i);
+      const weight = getRarityWeightFromCsv(layersCsvData, layerName, cleanElementName) || getRarityWeight(i)
       return {
         id: index,
-        name: cleanName(i),
+        name: cleanElementName,
         filename: i,
         path: `${path}${i}`,
-        weight: getRarityWeight(i),
+        weight,
       };
     });
 };
 
-const layersSetup = (layersOrder) => {
+const layersSetup = (layersOrder, layersCsvData) => {
   const layers = layersOrder.map((layerObj, index) => ({
     id: index,
-    elements: getElements(`${layersDir}/${layerObj.name}/`),
+    elements: getElements(`${layersDir}/${layerObj.name}/`, layerObj.name, layersCsvData),
     name:
       layerObj.options?.["displayName"] != undefined
         ? layerObj.options?.["displayName"]
@@ -332,6 +368,7 @@ const startCreating = async () => {
   let editionCount = 1;
   let failedCount = 0;
   let abstractedIndexes = [];
+  const csvData = readLayersCsv(layersCsvPath);
   for (
     let i = network == NETWORK.sol ? 0 : 1;
     i <= layerConfigurations[layerConfigurations.length - 1].growEditionSizeTo;
@@ -347,7 +384,8 @@ const startCreating = async () => {
     : null;
   while (layerConfigIndex < layerConfigurations.length) {
     const layers = layersSetup(
-      layerConfigurations[layerConfigIndex].layersOrder
+      layerConfigurations[layerConfigIndex].layersOrder,
+      csvData
     );
     while (
       editionCount <= layerConfigurations[layerConfigIndex].growEditionSizeTo
