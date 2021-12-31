@@ -140,3 +140,7 @@ dist
 # OSX
 
 .DS_Store
+
+# We wont be changing layers here
+
+layers
