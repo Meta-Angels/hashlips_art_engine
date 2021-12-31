@@ -4,7 +4,10 @@ const layersDir = `${basePath}/layers`;
 
 const { layerConfigurations } = require(`${basePath}/src/config.js`);
 
-const { getElements } = require("../src/main.js");
+const { getElements, readLayersCsv } = require("../src/main.js");
+
+const layersCsvPath = `${basePath}/layers/layers.csv`;
+const csvData = readLayersCsv(layersCsvPath);
 
 // read json data
 let rawdata = fs.readFileSync(`${basePath}/build/json/_metadata.json`);
@@ -20,7 +23,7 @@ layerConfigurations.forEach((config) => {
   layers.forEach((layer) => {
     // get elements for each layer
     let elementsForLayer = [];
-    let elements = getElements(`${layersDir}/${layer.name}/`);
+    let elements = getElements(`${layersDir}/${layer.name}/`, layer.name, csvData);
     elements.forEach((element) => {
       // just get name and weight for each element
       let rarityDataElement = {
