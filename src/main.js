@@ -35,7 +35,7 @@ const layersCsvPath = `${basePath}/layers/layers.csv`;
 
 let hashlipsGiffer = null;
 
-const layerTraitCsvNormlizer = (layer, trait) => `${layer.toLowerCase()}#${trait.toLowerCase()}`;
+const layerTraitCsvNormalizer = (layer, trait) => `${layer.toLowerCase()}#${trait.toLowerCase()}`;
 
 const readLayersCsv = (path) => {
   const layersCsvExist = fs.existsSync(path);
@@ -52,9 +52,34 @@ const readLayersCsv = (path) => {
 
   debugLogs && console.log(`Layers CSV parsed with ${Object.keys(layersCsvParsed).length} entries`);
 
-  // Normalize each row to include layer and 
+  // Normalize each row to include layer and trait
   return layersCsvParsed.reduce((accumulator, cur) => {
-    accumulator[layerTraitCsvNormlizer(cur.layer, cur.trait)] = cur;
+    const downstreamTraits = {};
+
+    // Iterate over the current row to get all the downstreat trait rarity (aka rules)
+    // TODO: Refactor this
+    Object.keys(cur).forEach((header) => {
+      // Only iterate over the headers with # since those are traits. The
+      // header should always be ${layer}#${trait}
+      if (!header.includes('#')) {
+        return;
+      }
+
+      const value = cur[header];
+
+      // Ignore empty values since we need to have them to make the csv into the matrix
+      if (value === '') {
+        return;
+      }
+
+      // Make a hashmap with these downstream traits
+      downstreamTraits[header.toLowerCase()] = Number(value);
+    });
+
+    accumulator[layerTraitCsvNormalizer(cur.layer, cur.trait)] = {
+      ...cur,
+      downstreamTraits
+    };
 
     return accumulator;
   }, {});
@@ -83,10 +108,7 @@ const getRarityWeight = (_str) => {
   return nameWithoutWeight;
 };
 
-const getRarityWeightFromCsv = (layersCsvData, layerName, elementName) => {
-  const normalizedLayerTrait = layerTraitCsvNormlizer(layerName, elementName);
-  const elementOnCsv = layersCsvData[normalizedLayerTrait] || {};
-
+const getRarityWeightFromCsvElement = (elementOnCsv) => {
   return elementOnCsv['rarity'] ? Number(elementOnCsv['rarity']) : undefined;
 };
 
@@ -108,10 +130,14 @@ const getElements = (path, layerName, layersCsvData) => {
     .filter((item) => !/(^|\/)\.[^\/\.]/g.test(item))
     .map((i, index) => {
       const cleanElementName = cleanName(i);
-      const weight = getRarityWeightFromCsv(layersCsvData, layerName, cleanElementName) || getRarityWeight(i)
+      const normalizedLayerTrait = layerTraitCsvNormalizer(layerName, cleanElementName);
+      const elementOnCsv = layersCsvData[normalizedLayerTrait] || {};
+
+      const weight = getRarityWeightFromCsvElement(elementOnCsv) || getRarityWeight(i)
       return {
         id: index,
         name: cleanElementName,
+        downstreamTraits: elementOnCsv.downstreamTraits,
         filename: i,
         path: `${path}${i}`,
         weight,
@@ -309,20 +335,34 @@ const isDnaUnique = (_DnaList = new Set(), _dna = "") => {
 };
 
 const createDna = (_layers) => {
+  let downstreamTraits = {};
   let randNum = [];
   _layers.forEach((layer) => {
     var totalWeight = 0;
-    layer.elements.forEach((element) => {
+
+    // Poor man array deep clone. Using _ would be useful here
+    const elementsClone = JSON.parse(JSON.stringify(layer.elements));
+
+    elementsClone.forEach((element) => {
+      // Downstream trait weight take precedence over the element weight
+      const downstreamTraitWeight = downstreamTraits[layerTraitCsvNormalizer(layer.name, element.name)];
+      if (downstreamTraitWeight !== undefined) {
+        // Replace the element weight for the downstream one
+        element.weight = downstreamTraitWeight;
+      }
+
       totalWeight += element.weight;
     });
     // number between 0 - totalWeight
     let random = Math.floor(Math.random() * totalWeight);
-    for (var i = 0; i < layer.elements.length; i++) {
+    for (var i = 0; i < elementsClone.length; i++) {
       // subtract the current weight from the random weight until we reach a sub zero value.
-      random -= layer.elements[i].weight;
+      const currentElement = elementsClone[i];
+      random -= currentElement.weight;
       if (random < 0) {
+        downstreamTraits = { ...currentElement.downstreamTraits, ...downstreamTraits };
         return randNum.push(
-          `${layer.elements[i].id}:${layer.elements[i].filename}${
+          `${currentElement.id}:${currentElement.filename}${
             layer.bypassDNA ? "?bypassDNA=true" : ""
           }`
         );

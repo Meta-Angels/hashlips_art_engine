@@ -1,5 +1,5 @@
-layer,trait,rarity,Bottom lid#Black,Bottom lid@Low
-Background,Black,1,0,
-Bottom lid,High,5,,0
-Bottom lid,Low,90,,
-Bottom lid,Middle,5,,
+layer,trait,rarity,Bottom lid#High,Bottom lid#Low,Eye Color#Red,Eye Color#Green
+Background,Black,100,0,,10000,0
+Bottom lid,High,90,,,,
+Bottom lid,Low,5,,,,
+Bottom lid,Middle,0,,,,
