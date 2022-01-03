@@ -2,6 +2,7 @@ const { parse } = require ('csv/sync');
 const basePath = process.cwd();
 const { NETWORK } = require(`${basePath}/constants/network.js`);
 const fs = require("fs");
+const _ = require('lodash');
 const sha1 = require(`${basePath}/node_modules/sha1`);
 const { createCanvas, loadImage } = require(`${basePath}/node_modules/canvas`);
 const buildDir = `${basePath}/build`;
@@ -198,7 +199,6 @@ const addMetadata = (_dna, _edition) => {
     date: dateTime,
     ...extraMetadata,
     attributes: attributesList,
-    compiler: "HashLips Art Engine",
   };
   if (network == NETWORK.sol) {
     tempMetadata = {
@@ -341,7 +341,7 @@ const createDna = (_layers) => {
     var totalWeight = 0;
 
     // Poor man array deep clone. Using _ would be useful here
-    const elementsClone = JSON.parse(JSON.stringify(layer.elements));
+    const elementsClone = _.cloneDeep(layer.elements);
 
     elementsClone.forEach((element) => {
       // Downstream trait weight take precedence over the element weight
@@ -474,7 +474,7 @@ const startCreating = async () => {
             : null;
           saveImage(abstractedIndexes[0]);
           addMetadata(newDna, abstractedIndexes[0]);
-          saveMetaDataSingleFile(abstractedIndexes[0]);
+          // saveMetaDataSingleFile(abstractedIndexes[0]);
           console.log(
             `Created edition: ${abstractedIndexes[0]}, with DNA: ${sha1(
               newDna
@@ -497,6 +497,67 @@ const startCreating = async () => {
     }
     layerConfigIndex++;
   }
+
+  // Rarity calculations
+  const rarityPerTrait = {};
+  const totalEditions = metadataList.length;
+
+  // Get per attribute and layer an ocurrence count and a running score
+  metadataList.forEach(({ attributes }) => {
+    attributes.forEach(({ trait_type, value }) => {
+      normalizedTrait = layerTraitCsvNormalizer(trait_type, value);
+
+      rarityPerTrait[normalizedTrait] ||= { ocurrence: 0, score: 0 };
+      rarityPerTrait[normalizedTrait].ocurrence = rarityPerTrait[normalizedTrait].ocurrence + 1;
+      rarityPerTrait[normalizedTrait].score = (1/(rarityPerTrait[normalizedTrait].ocurrence/totalEditions));
+    });
+  });
+
+  // Write out all rarities
+  var rarityWriter = fs.createWriteStream(`${buildDir}/rarity.txt`);
+
+  Object.keys(rarityPerTrait).forEach((normalizedTrait) => {
+    const { ocurrence, score } = rarityPerTrait[normalizedTrait];
+
+    const chance = ((ocurrence/totalEditions) * 100);
+    rarityWriter.write(`${normalizedTrait} - ${ocurrence} in ${totalEditions} editions - ${chance}% - ${score.toFixed(2)} rarity score\n`);
+  });
+
+  rarityWriter.end();
+
+  // Rarity score calculations
+
+  // Do a first pass to calculate all scores per edition
+  metadataList.forEach((metadata) => {
+    let score = 0;
+
+    metadata.attributes.forEach(({ trait_type, value }) => {
+      normalizedTrait = layerTraitCsvNormalizer(trait_type, value);
+
+      score += rarityPerTrait[normalizedTrait].score;
+    });
+
+    metadata.score = score;
+  });
+
+  const sortedMetadataList = _.sortBy(metadataList, ['score']);
+
+  // Do a second pass to add all rankings
+  sortedMetadataList.forEach((metadata, index) => {
+    const currentMetadata = metadataList[Number(metadata.edition) - 1];
+    currentMetadata.attributes.push({
+      trait_type: "Rarity Rank (#1 Rarest)", 
+      value: totalEditions - index,
+      max_value: totalEditions
+    });
+  });
+
+  // Do a third pass to print out each of the files metada. I know... this could be smarter but why bother
+  metadataList.forEach(({ edition: editionNumber }) => {
+    saveMetaDataSingleFile(editionNumber);
+  });
+
+  // Write it all out
   writeMetaData(JSON.stringify(metadataList, null, 2));
 };
 

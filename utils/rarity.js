@@ -53,6 +53,11 @@ data.forEach((element) => {
     let value = attribute.value;
 
     let rarityDataTraits = rarityData[traitType];
+
+    if (!rarityDataTraits) {
+      return;
+    }
+
     rarityDataTraits.forEach((rarityDataTrait) => {
       if (rarityDataTrait.trait == value) {
         // keep track of occurrences
