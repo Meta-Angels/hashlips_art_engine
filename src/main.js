@@ -31,6 +31,7 @@ var metadataList = [];
 var attributesList = [];
 var dnaList = new Set();
 const DNA_DELIMITER = "-";
+const IGNORED_ELEMENT_NAME = 'none';
 const HashlipsGiffer = require(`${basePath}/modules/HashlipsGiffer.js`);
 const layersCsvPath = `${basePath}/layers/layers.csv`;
 
@@ -232,6 +233,12 @@ const addMetadata = (_dna, _edition) => {
 
 const addAttributes = (_element) => {
   let selectedElement = _element.layer.selectedElement;
+
+  // Ignore elements named 'None'
+  if (selectedElement.name.toLowerCase() === IGNORED_ELEMENT_NAME) {
+    return;
+  }
+
   attributesList.push({
     trait_type: _element.layer.name,
     value: selectedElement.name,
